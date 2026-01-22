@@ -214,7 +214,11 @@ func (r *TorqueSpaceGitlabEnterpriseRepositoryResource) Read(ctx context.Context
 
 func (r *TorqueSpaceGitlabEnterpriseRepositoryResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data TorqueSpaceGitlabEnterpriseRepositoryResourceModel
-
+	const (
+		StatusSyncing   = "Syncing"
+		StatusConnected = "Connected"
+		Interval        = 4 * time.Second
+	)
 	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 
@@ -230,6 +234,24 @@ func (r *TorqueSpaceGitlabEnterpriseRepositoryResource) Update(ctx context.Conte
 	err := r.client.UpdateRepoConfiguration(data.SpaceName.ValueString(), data.RepositoryName.ValueString(),
 		data.CredentialName.ValueString(), agents, data.UseAllAgents.ValueBool())
 	if err != nil {
+		repo, err := r.client.GetRepoDetails(data.SpaceName.ValueString(), data.RepositoryName.ValueString())
+		if repo.Status == StatusSyncing {
+			timeout := time.Duration(data.TimeOut.ValueInt32()) * time.Minute
+			for time.Since(start) < timeout {
+				repo, err := r.client.GetRepoDetails(data.SpaceName.ValueString(), data.RepositoryName.ValueString())
+				if err != nil {
+					resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Error while polling repository status: %s", err))
+					return
+				}
+				if repo.Status == StatusConnected {
+					resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+					return
+				}
+				time.Sleep(Interval)
+			}
+			resp.Diagnostics.AddError("Sync Timeout", "Timed out while syncing repository")
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update repository configuration, got error: %s", err))
 		return
 	}
