@@ -231,6 +231,7 @@ func (r *TorqueSpaceGitlabEnterpriseRepositoryResource) Update(ctx context.Conte
 			agents = append(agents, strings.Trim(agent.String(), "\""))
 		}
 	}
+	start := time.Now()
 	err := r.client.UpdateRepoConfiguration(data.SpaceName.ValueString(), data.RepositoryName.ValueString(),
 		data.CredentialName.ValueString(), agents, data.UseAllAgents.ValueBool())
 	if err != nil {
